@@ -1,0 +1,273 @@
+; ==============================================================================
+; PROJECT:     CNR's Button History
+; VERSION:     1.00
+; AUTHOR:      CNR
+; LICENSE:     MIT (https://opensource.org/license/mit)
+; DESCRIPTION: Tracks guitar fret presses and lifetime strum counts
+; ==============================================================================
+; INSTRUCTIONS: 
+; - Left-Click and drag to move the overlay.
+; - Right-Click the overlay to open Settings/History.
+; - Right-Click INSIDE the Settings window to Save and Restart.
+;
+; --- CHANGELOG ---
+; v1.00: Initial stable release. 
+; ==============================================================================
+
+#Persistent
+#SingleInstance Force
+
+; --- FORCE ADMIN PRIVILEGES ---
+if !A_IsAdmin
+{
+    Run *RunAs "%A_ScriptFullPath%"
+    ExitApp
+}
+
+; --- SET ICON (SMART LOGIC) ---
+if !A_IsCompiled
+    Menu, Tray, Icon, %A_ScriptDir%\CNR's Button History.ico
+else
+    Menu, Tray, Icon, %A_ScriptName%, 1
+
+; --- FILE PATH SETUP ---
+global IniPath := A_ScriptDir . "\settings.ini"
+
+; --- INITIAL LOAD ---
+IniRead, CareerTotal, %IniPath%, Totals, CareerTotal, 0
+IniRead, HistG, %IniPath%, History, Green, 0
+IniRead, HistR, %IniPath%, History, Red, 0
+IniRead, HistY, %IniPath%, History, Yellow, 0
+IniRead, HistB, %IniPath%, History, Blue, 0
+IniRead, HistO, %IniPath%, History, Orange, 0
+IniRead, HistUp, %IniPath%, History, StrumUp, 0
+IniRead, HistDn, %IniPath%, History, StrumDn, 0
+
+IniRead, SelectedJoy, %IniPath%, Controls, ControllerID, 1
+IniRead, BindG, %IniPath%, Controls, Green, 1
+IniRead, BindR, %IniPath%, Controls, Red, 2
+IniRead, BindB, %IniPath%, Controls, Blue, 3
+IniRead, BindY, %IniPath%, Controls, Yellow, 4
+IniRead, BindO, %IniPath%, Controls, Orange, 5
+IniRead, InvertStrum, %IniPath%, Controls, StrumMode, 0 
+IniRead, CurrentTheme, %IniPath%, Aesthetics, Theme, Default
+
+SessionG := 0, SessionR := 0, SessionY := 0, SessionB := 0, SessionO := 0
+StrumUp  := 0, StrumDn  := 0
+JoyName := GetKeyState(SelectedJoy "JoyName")
+StatusText := (JoyName = "") ? "NOT FOUND" : JoyName
+
+; --- MAIN GUI ---
+Gui, Main:New, +AlwaysOnTop +ToolWindow -Caption -Border +LastFound
+Gui, Color, 1A1A1A
+Gui, Font, s10 Bold, Segoe UI
+
+; THEME SETUP
+if (CurrentTheme = "Transparent") {
+    WinSet, TransColor, 1A1A1A
+} else if (CurrentTheme = "Liquid Glass") {
+    Gui, Color, 222222
+    WinSet, Transparent, 200
+} else if (CurrentTheme = "Basic Colors") {
+    Gui, Add, Progress, x10 y5 w60 h65 BackgroundA86F32 Disabled
+    Gui, Add, Progress, x80 y5 w60 h65 Background3B6A91 Disabled
+    Gui, Add, Progress, x150 y5 w60 h65 Background969642 Disabled
+    Gui, Add, Progress, x220 y5 w60 h65 Background913B3B Disabled
+    Gui, Add, Progress, x290 y5 w60 h65 Background3B913B Disabled
+}
+
+Menu, ContextMenu, Add, History, ShowHistory
+Menu, ContextMenu, Add, Settings, ShowSettings
+Menu, ContextMenu, Add, Exit, QuitApp
+
+; Header Labels
+Gui, Add, Text, x10 y5 w60 Center c804000 vLabelO, ORANGE
+Gui, Add, Text, x80 y5 w60 Center c004080 vLabelB, BLUE
+Gui, Add, Text, x150 y5 w60 Center c808000 vLabelY, YELLOW
+Gui, Add, Text, x220 y5 w60 Center c800000 vLabelR, RED
+Gui, Add, Text, x290 y5 w60 Center c008000 vLabelG, GREEN
+Gui, Add, Text, x365 y5 w90 Center c444444 vLabelStrum, STRUM
+
+; Counters
+Gui, Font, s22
+AddOutlinedText(10, 25, 60, "DispO", "0")
+AddOutlinedText(80, 25, 60, "DispB", "0")
+AddOutlinedText(150, 25, 60, "DispY", "0")
+AddOutlinedText(220, 25, 60, "DispR", "0")
+AddOutlinedText(290, 25, 60, "DispG", "0")
+
+Gui, Font, s12
+Gui, Add, Text, x365 y22 w90 Center cFFFFFF vDispUp, UP 0
+Gui, Add, Text, x365 y48 w90 Center cFFFFFF vDispDn, DN 0
+Gui, Font, s9 c888888
+Gui, Add, Text, x10 y75 w445 Center vTotalText, % "CAREER TOTAL: " . CareerTotal
+
+Gui, Main:Show, xCenter y0, CNR's Button History
+OnMessage(0x0201, "DragGui")       
+OnMessage(0x0204, "OpenMenu")      
+SetTimer, ControllerLoop, 10
+Return
+
+; --- OUTLINE FUNCTION ---
+AddOutlinedText(x, y, w, vName, text) {
+    global
+    Gui, Add, Text, % "x" x-1 " y" y " w" w " Center c000000 BackgroundTrans", %text%
+    Gui, Add, Text, % "x" x+1 " y" y " w" w " Center c000000 BackgroundTrans", %text%
+    Gui, Add, Text, % "x" x " y" y-1 " w" w " Center c000000 BackgroundTrans", %text%
+    Gui, Add, Text, % "x" x " y" y+1 " w" w " Center c000000 BackgroundTrans", %text%
+    Gui, Add, Text, % "x" x " y" y " w" w " Center cFFFFFF v" vName " BackgroundTrans", %text%
+}
+
+; --- SETTINGS GUI ---
+ShowSettings:
+    Gui, Config:New, +AlwaysOnTop, CNR's Settings
+    Gui, Color, 2A2A2A
+    Gui, Font, s9 cFFFFFF, Segoe UI
+    Gui, Add, Text, x10 y5 cFFFF00, [ RIGHT-CLICK ANYWHERE TO SAVE ]
+    Gui, Add, Tab3, x10 y25 w250 h215, General|Controls
+    
+    Gui, Tab, 1
+    Gui, Add, Text, x25 y60, Controller ID:
+    Gui, Add, DropDownList, x120 yp-3 w60 vSetJoy Choose%SelectedJoy%, 1|2|3|4|5|6|7|8|9|10
+    Gui, Add, Text, x25 y+15, Theme:
+    Gui, Add, DropDownList, x120 yp-3 w110 vSetTheme, Default|Basic Colors|Liquid Glass|Transparent
+    GuiControl, ChooseString, SetTheme, %CurrentTheme%
+    Gui, Font, s7 cAAAAAA
+    Gui, Add, Text, x25 y170 w220, Path: %IniPath%
+    Gui, Font, s8 c00FF00 Bold
+    Gui, Add, Text, x25 y190 w220, Status: %StatusText%
+    
+    Gui, Tab, 2
+    Gui, Font, s9 c000000 Normal
+    Gui, Add, Text, x25 y60 w60 cFFFFFF, Green:
+    Gui, Add, Edit, x90 yp-3 w40 vSetG, %BindG%
+    Gui, Add, Text, x25 y+10 w60 cFFFFFF, Red:
+    Gui, Add, Edit, x90 yp-3 w40 vSetR, %BindR%
+    Gui, Add, Text, x25 y+10 w60 cFFFFFF, Yellow:
+    Gui, Add, Edit, x90 yp-3 w40 vSetY, %BindY%
+    Gui, Add, Text, x25 y+10 w60 cFFFFFF, Blue:
+    Gui, Add, Edit, x90 yp-3 w40 vSetB, %BindB%
+    Gui, Add, Text, x25 y+10 w60 cFFFFFF, Orange:
+    Gui, Add, Edit, x90 yp-3 w40 vSetO, %BindO%
+    StrumIdx := InvertStrum + 1
+    Gui, Add, Text, x150 y60 cFFFFFF, Strumming:
+    Gui, Add, DropDownList, x150 y80 w80 vSetStrum Choose%StrumIdx%, Standard|Inverted
+
+    Gui, Config:Show
+Return
+
+; --- SAVE LOGIC ---
+OpenMenu() {
+    global
+    if (A_Gui = "Config") {
+        Gui, Config:Submit
+        FinalStrum := (SetStrum = "Inverted" ? 1 : 0)
+        
+        IniWrite, %SetJoy%, %IniPath%, Controls, ControllerID
+        IniWrite, %SetG%, %IniPath%, Controls, Green
+        IniWrite, %SetR%, %IniPath%, Controls, Red
+        IniWrite, %SetB%, %IniPath%, Controls, Blue
+        IniWrite, %SetY%, %IniPath%, Controls, Yellow
+        IniWrite, %SetO%, %IniPath%, Controls, Orange
+        IniWrite, %FinalStrum%, %IniPath%, Controls, StrumMode
+        IniWrite, %SetTheme%, %IniPath%, Aesthetics, Theme
+        
+        Reload
+    } else {
+        Menu, ContextMenu, Show
+    }
+}
+
+; --- INPUT LOOP ---
+ControllerLoop:
+    ProcessButton(BindG, SessionG, HistG, "DispG", LastG, "LabelG", "008000", "33FF33", "Green")
+    ProcessButton(BindR, SessionR, HistR, "DispR", LastR, "LabelR", "800000", "FF3333", "Red")
+    ProcessButton(BindB, SessionB, HistB, "DispB", LastB, "LabelB", "004080", "0099FF", "Blue")
+    ProcessButton(BindY, SessionY, HistY, "DispY", LastY, "LabelY", "808000", "FFFF00", "Yellow")
+    ProcessButton(BindO, SessionO, HistO, "DispO", LastO, "LabelO", "804000", "FF8C00", "Orange")
+    
+    POVState := GetKeyState(SelectedJoy "JoyPOV")
+    if (POVState != -1 && LastStrum = 0) {
+        GuiControl, Main:+cFFFFFF, LabelStrum
+        GuiControl, Main:MoveDraw, LabelStrum
+        LastStrum := 1
+    } else if (POVState = -1 && LastStrum = 1) {
+        GuiControl, Main:+c444444, LabelStrum
+        GuiControl, Main:MoveDraw, LabelStrum
+        LastStrum := 0
+    }
+    
+    if (POVState = 0 && OldPOV != 0) { 
+        if (InvertStrum = 0) {
+            StrumUp++, HistUp++, RefreshUI("DispUp", "UP " . StrumUp)
+            IniWrite, %HistUp%, %IniPath%, History, StrumUp
+        } else {
+            StrumDn++, HistDn++, RefreshUI("DispDn", "DN " . StrumDn)
+            IniWrite, %HistDn%, %IniPath%, History, StrumDn
+        }
+    } else if (POVState = 18000 && OldPOV != 18000) { 
+        if (InvertStrum = 0) {
+            StrumDn++, HistDn++, RefreshUI("DispDn", "DN " . StrumDn)
+            IniWrite, %HistDn%, %IniPath%, History, StrumDn
+        } else {
+            StrumUp++, HistUp++, RefreshUI("DispUp", "UP " . StrumUp)
+            IniWrite, %HistUp%, %IniPath%, History, StrumUp
+        }
+    }
+    OldPOV := POVState
+Return
+
+ProcessButton(BtnID, ByRef SesVar, ByRef HistVar, GuiID, ByRef Prev, LabID, Dim, Bright, IniKey) {
+    global SelectedJoy, IniPath
+    IsPressed := GetKeyState(SelectedJoy "Joy" BtnID)
+    if (IsPressed != Prev) {
+        if (IsPressed) {
+            GuiControl, Main:+c%Bright%, %LabID%
+            SesVar++, HistVar++
+            IniWrite, %HistVar%, %IniPath%, History, %IniKey%
+            RefreshUI(GuiID, SesVar)
+        } else {
+            GuiControl, Main:+c%Dim%, %LabID%
+        }
+        GuiControl, Main:MoveDraw, %LabID%
+        Prev := IsPressed
+    }
+}
+
+RefreshUI(ControlName, NewVal) {
+    global
+    GuiControl, Main:, %ControlName%, %NewVal%
+    CareerTotal++
+    IniWrite, %CareerTotal%, %IniPath%, Totals, CareerTotal
+    GuiControl, Main:, TotalText, % "CAREER TOTAL: " . CareerTotal
+}
+
+ShowHistory:
+    Gui, HistWin:New, +AlwaysOnTop, Lifetime Stats
+    Gui, Color, 2A2A2A
+    Gui, Font, s10 cFFFFFF, Segoe UI
+    Gui, Add, Text, w150, GREEN: %HistG%
+    Gui, Add, Text, w150, RED: %HistR%
+    Gui, Add, Text, w150, YELLOW: %HistY%
+    Gui, Add, Text, w150, BLUE: %HistB%
+    Gui, Add, Text, w150, ORANGE: %HistO%
+    Gui, Add, Text,, ---
+    Gui, Add, Text, w150, STRUM UP: %HistUp%
+    Gui, Add, Text, w150, STRUM DN: %HistDn%
+    Gui, Add, Text,, ---
+    Gui, Add, Text, w150, TOTAL: %CareerTotal%
+    Gui, Add, Button, w100 h30 gCloseHist, Close
+    Gui, HistWin:Show
+Return
+
+CloseHist:
+    Gui, HistWin:Destroy
+Return
+
+DragGui() {
+    if (A_Gui = "Main")
+        PostMessage, 0xA1, 2,,, A
+}
+
+QuitApp:
+    ExitApp
