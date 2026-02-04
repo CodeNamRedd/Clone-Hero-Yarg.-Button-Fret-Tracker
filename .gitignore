@@ -1,0 +1,9 @@
+# Ignore settings and personal data
+*.ini
+
+# Ignore compiled files (keep your repo clean)
+*.exe
+
+# Ignore Windows temporary files
+Thumbs.db
+Desktop.ini
